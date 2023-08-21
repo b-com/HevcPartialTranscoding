@@ -2101,6 +2101,15 @@ Void TDecCavlc::parseExplicitRdpcmMode( TComTU& /*rTu*/, ComponentID /*compID*/ 
   assert(0);
 }
 
+Void TDecCavlc::setIsRecording(Bool b)
+{
+  return;
+}
+
+Bool TDecCavlc::getIsRecording()
+{
+  return false;
+}
 
 //! \}
 

@@ -353,7 +353,9 @@ Void TDecCu::xFinishDecodeCU( TComDataCU* pcCU, UInt uiAbsPartIdx, UInt uiDepth,
     pcCU->setChromaQpAdjSubParts( pcCU->getCodedChromaQpAdj(), uiAbsPartIdx, uiDepth ); // set QP
   }
 
-  isLastCtuOfSliceSegment = xDecodeSliceEnd( pcCU, uiAbsPartIdx );
+  Bool val = xDecodeSliceEnd(pcCU, uiAbsPartIdx);
+  if (!getIsRecording())
+    isLastCtuOfSliceSegment = val;
 }
 
 Void TDecCu::xDecompressCU( TComDataCU* pCtu, UInt uiAbsPartIdx,  UInt uiDepth )

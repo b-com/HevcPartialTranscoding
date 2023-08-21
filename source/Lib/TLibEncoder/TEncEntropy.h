@@ -46,6 +46,7 @@
 #include "TLibCommon/TComTrQuant.h"
 #include "TLibCommon/TComSampleAdaptiveOffset.h"
 #include "TLibCommon/TComChromaFormat.h"
+#include "TLibEncoder/TEncBinCoder.h"
 
 class TEncSbac;
 class TEncCavlc;
@@ -109,6 +110,12 @@ public:
   virtual Void estBit               (estBitsSbacStruct* pcEstBitsSbac, Int width, Int height, ChannelType chType, COEFF_SCAN_TYPE scanType) = 0;
   virtual Void codeExplicitRdpcmMode ( TComTU &rTu, const ComponentID compID ) = 0;
 
+  virtual Void resetStorage     () = 0;
+  virtual Void codeStorage      ( binStorage storage ) = 0;
+  virtual Void codeStorage      () = 0;
+  virtual Void getStorage       ( binStorage &storage ) = 0;
+  virtual Void makeBackupCotexts( TEncSbac* src ) = 0;
+  
   virtual ~TEncEntropyIf() {}
 };
 

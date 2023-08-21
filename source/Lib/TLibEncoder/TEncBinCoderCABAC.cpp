@@ -46,8 +46,11 @@
 TEncBinCABAC::TEncBinCABAC()
 : m_pcTComBitIf( 0 )
 , m_binCountIncrement( 0 )
+, m_binCountIncrement_backup( 0 )
+, m_bIsRecording (false)
 #if FAST_BIT_EST
 , m_fracBits( 0 )
+, m_fracBits_backup( 0 )
 #endif
 {
 }
@@ -178,6 +181,42 @@ UInt TEncBinCABAC::getNumWrittenBits()
   return m_pcTComBitIf->getNumberOfWrittenBits() + 8 * m_numBufferedBytes + 23 - m_bitsLeft;
 }
 
+Void TEncBinCABAC::resetStorage()
+{
+  m_storage.reset();
+  return;
+}
+
+Void TEncBinCABAC::setStorage(binStorage storage)
+{
+  m_storage = storage;
+  return;
+}
+
+Void TEncBinCABAC::getStorage( binStorage &storage)
+{
+  storage = m_storage;
+  return;
+}
+
+Void TEncBinCABAC::encodeStorage()
+{
+  for (UInt s = 0; s < m_storage.getSize(); s++)
+  {
+    StorageEntry entry = m_storage.getEntry(s);
+    switch (entry.codeMode)
+    {
+    case 1:       encodeBin           (entry.codeValue, *entry.ctxModel);             break;
+    case 2:       encodeBinEP         (entry.codeValue);                              break;
+    case 3:       encodeBinsEP        (entry.codeValue, entry.param);                 break;
+    case 4:       encodeAlignedBinsEP (entry.codeValue, entry.param);                 break;
+    case 5:       encodeBinTrm        (entry.codeValue);                              break;
+    default:      assert(false);                                                      break;
+    }
+  }
+  return;
+}
+
 /**
  * \brief Encode bin
  *
@@ -186,6 +225,11 @@ UInt TEncBinCABAC::getNumWrittenBits()
  */
 Void TEncBinCABAC::encodeBin( UInt binValue, ContextModel &rcCtxModel )
 {
+  if (m_bIsRecording)
+  {
+    m_storage.addEntryToStorage({ &rcCtxModel, binValue, -1, 1 });
+    return;
+  }
   //{
   //  DTRACE_CABAC_VL( g_nSymbolCounter++ )
   //  DTRACE_CABAC_T( "\tstate=" )
@@ -254,6 +298,11 @@ Void TEncBinCABAC::encodeBin( UInt binValue, ContextModel &rcCtxModel )
  */
 Void TEncBinCABAC::encodeBinEP( UInt binValue )
 {
+  if (m_bIsRecording)
+  {
+    m_storage.addEntryToStorage({ &ContextModel(), binValue, -1, 2 });
+    return;
+  }
   if (false)
   {
     DTRACE_CABAC_VL( g_nSymbolCounter++ )
@@ -288,6 +337,11 @@ Void TEncBinCABAC::encodeBinEP( UInt binValue )
  */
 Void TEncBinCABAC::encodeBinsEP( UInt binValues, Int numBins )
 {
+  if (m_bIsRecording)
+  {
+    m_storage.addEntryToStorage({ &ContextModel(), binValues, numBins, 3 });
+    return;
+  }
   m_uiBinsCoded += numBins & -m_binCountIncrement;
 
   if (false)
@@ -333,6 +387,11 @@ Void TEncBinCABAC::align()
 
 Void TEncBinCABAC::encodeAlignedBinsEP( UInt binValues, Int numBins )
 {
+  if (m_bIsRecording)
+  {
+    m_storage.addEntryToStorage( { &ContextModel(), binValues, numBins, 4 } ); 
+    return;
+  }
   Int binsRemaining = numBins;
 
   assert(m_uiRange == 256); //aligned encode only works when range = 256
@@ -375,6 +434,11 @@ Void TEncBinCABAC::encodeAlignedBinsEP( UInt binValues, Int numBins )
  */
 Void TEncBinCABAC::encodeBinTrm( UInt binValue )
 {
+  if (m_bIsRecording)
+  {
+    m_storage.addEntryToStorage({ &ContextModel(), binValue, -1, 5 } );
+    return;
+  }
   m_uiBinsCoded += m_binCountIncrement;
   m_uiRange -= 2;
   if( binValue )

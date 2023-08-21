@@ -124,6 +124,33 @@ TEncCavlc::~TEncCavlc()
 // Public member functions
 // ====================================================================================================================
 
+Void TEncCavlc::resetStorage()
+{
+}
+
+Void TEncCavlc::codeStorage( binStorage storage )
+{
+}
+
+Void TEncCavlc::codeStorage()
+{
+}
+
+Void TEncCavlc::makeBackupCotexts(TEncSbac* src)
+{
+  return;
+}
+
+Void TEncCavlc::getStorage( binStorage &storage )
+{
+  return;
+}
+
+Void TEncCavlc::setStorage(binStorage storage)
+{
+  return;
+}
+
 Void TEncCavlc::resetEntropy(const TComSlice* /*pSlice*/)
 {
 }

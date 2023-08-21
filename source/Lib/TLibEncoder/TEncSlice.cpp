@@ -636,6 +636,207 @@ Void TEncSlice::calCostSliceI(TComPic* pcPic) // TODO: this only analyses the fi
   m_pcRateCtrl->getRCPic()->setTotalIntraCost(iSumHadSlice);
 }
 
+Void TEncSlice::compressOneCtu(TComPic* pcPic, UInt ctuTsAddr, const Bool bCompressEntireSlice, const Bool bFastDeltaQP, TComBitCounter  tempBitCounter, TEncBinCABAC* pRDSbacCoder, int redo)
+{
+  TComSlice* const pcSlice = pcPic->getSlice(getSliceIdx());
+  UInt   startCtuTsAddr;
+  UInt   boundingCtuTsAddr;
+  if (bCompressEntireSlice)
+    boundingCtuTsAddr = pcSlice->getSliceCurEndCtuTsAddr();
+  xDetermineStartAndBoundingCtuTsAddr(startCtuTsAddr, boundingCtuTsAddr, pcPic);
+  const UInt      frameWidthInCtus = pcPic->getPicSym()->getFrameWidthInCtus();  
+  const UInt ctuRsAddr = pcPic->getPicSym()->getCtuTsToRsAddrMap(ctuTsAddr);
+  // initialize CTU encoder
+  TComDataCU* pCtu = pcPic->getCtu(ctuRsAddr);
+  pCtu->initCtu(pcPic, ctuRsAddr);
+
+  // update CABAC state
+  const UInt firstCtuRsAddrOfTile = pcPic->getPicSym()->getTComTile(pcPic->getPicSym()->getTileIdxMap(ctuRsAddr))->getFirstCtuRsAddr();
+  const UInt tileXPosInCtus = firstCtuRsAddrOfTile % frameWidthInCtus;
+  const UInt ctuXPosInCtus = ctuRsAddr % frameWidthInCtus;
+
+  if (ctuRsAddr == firstCtuRsAddrOfTile)
+  {
+    m_pppcRDSbacCoder[0][CI_CURR_BEST]->resetEntropy(pcSlice);
+  }
+  else if (ctuXPosInCtus == tileXPosInCtus && m_pcCfg->getEntropyCodingSyncEnabledFlag())
+  {
+    // reset and then update contexts to the state at the end of the top-right CTU (if within current slice and tile).
+    m_pppcRDSbacCoder[0][CI_CURR_BEST]->resetEntropy(pcSlice);
+    // Sync if the Top-Right is available.
+    TComDataCU* pCtuUp = pCtu->getCtuAbove();
+    if (pCtuUp && ((ctuRsAddr % frameWidthInCtus + 1) < frameWidthInCtus))
+    {
+      TComDataCU* pCtuTR = pcPic->getCtu(ctuRsAddr - frameWidthInCtus + 1);
+      if (pCtu->CUIsFromSameSliceAndTile(pCtuTR))
+      {
+        // Top-Right is available, we use it.
+        m_pppcRDSbacCoder[0][CI_CURR_BEST]->loadContexts(&m_entropyCodingSyncContextState);
+      }
+    }
+  }
+
+  // set go-on entropy coder (used for all trial encodings - the cu encoder and encoder search also have a copy of the same pointer)
+  m_pcEntropyCoder->setEntropyCoder(m_pcRDGoOnSbacCoder);
+  m_pcEntropyCoder->setBitstream(&tempBitCounter);
+  tempBitCounter.resetBits();
+  m_pcRDGoOnSbacCoder->load(m_pppcRDSbacCoder[0][CI_CURR_BEST]); // this copy is not strictly necessary here, but indicates that the GoOnSbacCoder
+  // is reset to a known state before every decision process.
+
+  ((TEncBinCABAC*)m_pcRDGoOnSbacCoder->getEncBinIf())->setBinCountingEnableFlag(true);
+
+  Double oldLambda = m_pcRdCost->getLambda();
+  if (m_pcCfg->getUseRateCtrl())
+  {
+    Int estQP = pcSlice->getSliceQp();
+    Double estLambda = -1.0;
+    Double bpp = -1.0;
+
+    if ((pcPic->getSlice(0)->getSliceType() == I_SLICE && m_pcCfg->getForceIntraQP()) || !m_pcCfg->getLCULevelRC())
+    {
+      estQP = pcSlice->getSliceQp();
+    }
+    else
+    {
+      bpp = m_pcRateCtrl->getRCPic()->getLCUTargetBpp(pcSlice->getSliceType());
+      if (pcPic->getSlice(0)->getSliceType() == I_SLICE)
+      {
+        estLambda = m_pcRateCtrl->getRCPic()->getLCUEstLambdaAndQP(bpp, pcSlice->getSliceQp(), &estQP);
+      }
+      else
+      {
+        estLambda = m_pcRateCtrl->getRCPic()->getLCUEstLambda(bpp);
+        estQP = m_pcRateCtrl->getRCPic()->getLCUEstQP(estLambda, pcSlice->getSliceQp());
+      }
+
+      estQP = Clip3(-pcSlice->getSPS()->getQpBDOffset(CHANNEL_TYPE_LUMA), MAX_QP, estQP);
+
+      m_pcRdCost->setLambda(estLambda, pcSlice->getSPS()->getBitDepths());
+
+#if RDOQ_CHROMA_LAMBDA
+      // set lambda for RDOQ
+      const Double chromaLambda = estLambda / m_pcRdCost->getChromaWeight();
+      const Double lambdaArray[MAX_NUM_COMPONENT] = { estLambda, chromaLambda, chromaLambda };
+      m_pcTrQuant->setLambdas(lambdaArray);
+#else
+      m_pcTrQuant->setLambda(estLambda);
+#endif
+    }
+
+    m_pcRateCtrl->setRCQP(estQP);
+#if ADAPTIVE_QP_SELECTION
+    pCtu->getSlice()->setSliceQpBase(estQP);
+#endif
+  }
+
+  // run CTU trial encoder
+  m_pcCuEncoder->compressCtu(pCtu, redo);
+
+
+  // All CTU decisions have now been made. Restore entropy coder to an initial stage, ready to make a true encode,
+  // which will result in the state of the contexts being correct. It will also count up the number of bits coded,
+  // which is used if there is a limit of the number of bytes per slice-segment.
+
+  m_pcEntropyCoder->setEntropyCoder(m_pppcRDSbacCoder[0][CI_CURR_BEST]);
+  m_pcEntropyCoder->setBitstream(&tempBitCounter);
+  pRDSbacCoder->setBinCountingEnableFlag(true);
+  m_pppcRDSbacCoder[0][CI_CURR_BEST]->resetBits();
+  pRDSbacCoder->setBinsCoded(0);
+
+  // encode CTU and calculate the true bit counters.
+  m_pcCuEncoder->encodeCtu(pCtu);
+
+
+  pRDSbacCoder->setBinCountingEnableFlag(false);
+
+  const Int numberOfWrittenBits = m_pcEntropyCoder->getNumberOfWrittenBits();
+
+  // Calculate if this CTU puts us over slice bit size.
+  // cannot terminate if current slice/slice-segment would be 0 Ctu in size,
+  const UInt validEndOfSliceCtuTsAddr = ctuTsAddr + (ctuTsAddr == startCtuTsAddr ? 1 : 0);
+  // Set slice end parameter
+  if (pcSlice->getSliceMode() == FIXED_NUMBER_OF_BYTES && pcSlice->getSliceBits() + numberOfWrittenBits > (pcSlice->getSliceArgument() << 3))
+  {
+    pcSlice->setSliceSegmentCurEndCtuTsAddr(validEndOfSliceCtuTsAddr);
+    pcSlice->setSliceCurEndCtuTsAddr(validEndOfSliceCtuTsAddr);
+    boundingCtuTsAddr = validEndOfSliceCtuTsAddr;
+  }
+  else if ((!bCompressEntireSlice) && pcSlice->getSliceSegmentMode() == FIXED_NUMBER_OF_BYTES && pcSlice->getSliceSegmentBits() + numberOfWrittenBits > (pcSlice->getSliceSegmentArgument() << 3))
+  {
+    pcSlice->setSliceSegmentCurEndCtuTsAddr(validEndOfSliceCtuTsAddr);
+    boundingCtuTsAddr = validEndOfSliceCtuTsAddr;
+  }
+
+  // if (boundingCtuTsAddr <= ctuTsAddr)
+  // {
+  //   break;
+  // }
+
+  pcSlice->setSliceBits((UInt)(pcSlice->getSliceBits() + numberOfWrittenBits));
+  pcSlice->setSliceSegmentBits(pcSlice->getSliceSegmentBits() + numberOfWrittenBits);
+
+  // Store probabilities of second CTU in line into buffer - used only if wavefront-parallel-processing is enabled.
+  if (ctuXPosInCtus == tileXPosInCtus + 1 && m_pcCfg->getEntropyCodingSyncEnabledFlag())
+  {
+    m_entropyCodingSyncContextState.loadContexts(m_pppcRDSbacCoder[0][CI_CURR_BEST]);
+  }
+
+
+  if (m_pcCfg->getUseRateCtrl())
+  {
+    Int actualQP = g_RCInvalidQPValue;
+    Double actualLambda = m_pcRdCost->getLambda();
+    Int actualBits = pCtu->getTotalBits();
+    Int numberOfEffectivePixels = 0;
+
+#if JVET_M0600_RATE_CTRL
+    Int numberOfSkipPixel = 0;
+    for (Int idx = 0; idx < pcPic->getNumPartitionsInCtu(); idx++)
+    {
+
+      numberOfSkipPixel += 16 * pCtu->isSkipped(idx);
+    }
+#endif
+
+    for (Int idx = 0; idx < pcPic->getNumPartitionsInCtu(); idx++)
+    {
+      if (pCtu->getPredictionMode(idx) != NUMBER_OF_PREDICTION_MODES && (!pCtu->isSkipped(idx)))
+      {
+        numberOfEffectivePixels = numberOfEffectivePixels + 16;
+        break;
+      }
+    }
+
+#if JVET_M0600_RATE_CTRL
+    Double skipRatio = (Double)numberOfSkipPixel / m_pcRateCtrl->getRCPic()->getLCU(ctuTsAddr).m_numberOfPixel;
+#endif
+
+    if (numberOfEffectivePixels == 0)
+    {
+      actualQP = g_RCInvalidQPValue;
+    }
+    else
+    {
+      actualQP = pCtu->getQP(0);
+    }
+#if JVET_K0390_RATE_CTRL
+    m_pcRateCtrl->getRCPic()->getLCU(ctuTsAddr).m_actualMSE = (Double)pCtu->getTotalDistortion() / (Double)m_pcRateCtrl->getRCPic()->getLCU(ctuTsAddr).m_numberOfPixel;
+#endif
+    m_pcRdCost->setLambda(oldLambda, pcSlice->getSPS()->getBitDepths());
+#if JVET_M0600_RATE_CTRL
+    m_pcRateCtrl->getRCPic()->updateAfterCTU(m_pcRateCtrl->getRCPic()->getLCUCoded(), actualBits, actualQP, actualLambda, skipRatio,
+      pCtu->getSlice()->getSliceType() == I_SLICE ? 0 : m_pcCfg->getLCULevelRC());
+#else
+    m_pcRateCtrl->getRCPic()->updateAfterCTU(m_pcRateCtrl->getRCPic()->getLCUCoded(), actualBits, actualQP, actualLambda,
+      pCtu->getSlice()->getSliceType() == I_SLICE ? 0 : m_pcCfg->getLCULevelRC());
+#endif
+  }
+
+  m_uiPicTotalBits += pCtu->getTotalBits();
+  m_dPicRdCost += pCtu->getTotalCost();
+  m_uiPicDist += pCtu->getTotalDistortion();
+}
+
 /** \param pcPic   picture class
  */
 Void TEncSlice::compressSlice( TComPic* pcPic, const Bool bCompressEntireSlice, const Bool bFastDeltaQP )
@@ -732,200 +933,35 @@ Void TEncSlice::compressSlice( TComPic* pcPic, const Bool bCompressEntireSlice, 
 
   // for every CTU in the slice segment (may terminate sooner if there is a byte limit on the slice-segment)
 
+  TEncSbac *backup = new TEncSbac;
+
+  int targetCtu = m_pcCfg->getTBRCtuStartX();
+  const bool doTBR = m_pcCfg->getTBRCtuStartX() > -1; // Dirty
+
   for( UInt ctuTsAddr = startCtuTsAddr; ctuTsAddr < boundingCtuTsAddr; ++ctuTsAddr )
   {
-    const UInt ctuRsAddr = pcPic->getPicSym()->getCtuTsToRsAddrMap(ctuTsAddr);
-    // initialize CTU encoder
-    TComDataCU* pCtu = pcPic->getCtu( ctuRsAddr );
-    pCtu->initCtu( pcPic, ctuRsAddr );
-
-    // update CABAC state
-    const UInt firstCtuRsAddrOfTile = pcPic->getPicSym()->getTComTile(pcPic->getPicSym()->getTileIdxMap(ctuRsAddr))->getFirstCtuRsAddr();
-    const UInt tileXPosInCtus = firstCtuRsAddrOfTile % frameWidthInCtus;
-    const UInt ctuXPosInCtus  = ctuRsAddr % frameWidthInCtus;
-    
-    if (ctuRsAddr == firstCtuRsAddrOfTile)
+    if (ctuTsAddr == targetCtu && false)
     {
-      m_pppcRDSbacCoder[0][CI_CURR_BEST]->resetEntropy(pcSlice);
+      // Still not sure if this is necessary
+      backup->init((TEncBinIf*)m_pcBinCABAC);
+      backup->makeBackupCotexts(m_pppcRDSbacCoder[0][CI_CURR_BEST]);
     }
-    else if ( ctuXPosInCtus == tileXPosInCtus && m_pcCfg->getEntropyCodingSyncEnabledFlag())
-    {
-      // reset and then update contexts to the state at the end of the top-right CTU (if within current slice and tile).
-      m_pppcRDSbacCoder[0][CI_CURR_BEST]->resetEntropy(pcSlice);
-      // Sync if the Top-Right is available.
-      TComDataCU *pCtuUp = pCtu->getCtuAbove();
-      if ( pCtuUp && ((ctuRsAddr%frameWidthInCtus+1) < frameWidthInCtus)  )
-      {
-        TComDataCU *pCtuTR = pcPic->getCtu( ctuRsAddr - frameWidthInCtus + 1 );
-        if ( pCtu->CUIsFromSameSliceAndTile(pCtuTR) )
-        {
-          // Top-Right is available, we use it.
-          m_pppcRDSbacCoder[0][CI_CURR_BEST]->loadContexts( &m_entropyCodingSyncContextState );
-        }
-      }
-    }
-
-    // set go-on entropy coder (used for all trial encodings - the cu encoder and encoder search also have a copy of the same pointer)
-    m_pcEntropyCoder->setEntropyCoder ( m_pcRDGoOnSbacCoder );
-    m_pcEntropyCoder->setBitstream( &tempBitCounter );
-    tempBitCounter.resetBits();
-    m_pcRDGoOnSbacCoder->load( m_pppcRDSbacCoder[0][CI_CURR_BEST] ); // this copy is not strictly necessary here, but indicates that the GoOnSbacCoder
-                                                                     // is reset to a known state before every decision process.
-
-    ((TEncBinCABAC*)m_pcRDGoOnSbacCoder->getEncBinIf())->setBinCountingEnableFlag(true);
-
-    Double oldLambda = m_pcRdCost->getLambda();
-    if ( m_pcCfg->getUseRateCtrl() )
-    {
-      Int estQP        = pcSlice->getSliceQp();
-      Double estLambda = -1.0;
-      Double bpp       = -1.0;
-
-      if ( ( pcPic->getSlice( 0 )->getSliceType() == I_SLICE && m_pcCfg->getForceIntraQP() ) || !m_pcCfg->getLCULevelRC() )
-      {
-        estQP = pcSlice->getSliceQp();
-      }
-      else
-      {
-        bpp = m_pcRateCtrl->getRCPic()->getLCUTargetBpp(pcSlice->getSliceType());
-        if ( pcPic->getSlice( 0 )->getSliceType() == I_SLICE)
-        {
-          estLambda = m_pcRateCtrl->getRCPic()->getLCUEstLambdaAndQP(bpp, pcSlice->getSliceQp(), &estQP);
-        }
-        else
-        {
-          estLambda = m_pcRateCtrl->getRCPic()->getLCUEstLambda( bpp );
-          estQP     = m_pcRateCtrl->getRCPic()->getLCUEstQP    ( estLambda, pcSlice->getSliceQp() );
-        }
-
-        estQP     = Clip3( -pcSlice->getSPS()->getQpBDOffset(CHANNEL_TYPE_LUMA), MAX_QP, estQP );
-
-        m_pcRdCost->setLambda(estLambda, pcSlice->getSPS()->getBitDepths());
-
-#if RDOQ_CHROMA_LAMBDA
-        // set lambda for RDOQ
-        const Double chromaLambda = estLambda / m_pcRdCost->getChromaWeight();
-        const Double lambdaArray[MAX_NUM_COMPONENT] = { estLambda, chromaLambda, chromaLambda };
-        m_pcTrQuant->setLambdas( lambdaArray );
-#else
-        m_pcTrQuant->setLambda( estLambda );
-#endif
-      }
-
-      m_pcRateCtrl->setRCQP( estQP );
-#if ADAPTIVE_QP_SELECTION
-      pCtu->getSlice()->setSliceQpBase( estQP );
-#endif
-    }
-
-    // run CTU trial encoder
-    m_pcCuEncoder->compressCtu( pCtu );
-
-
-    // All CTU decisions have now been made. Restore entropy coder to an initial stage, ready to make a true encode,
-    // which will result in the state of the contexts being correct. It will also count up the number of bits coded,
-    // which is used if there is a limit of the number of bytes per slice-segment.
-
-    m_pcEntropyCoder->setEntropyCoder ( m_pppcRDSbacCoder[0][CI_CURR_BEST] );
-    m_pcEntropyCoder->setBitstream( &tempBitCounter );
-    pRDSbacCoder->setBinCountingEnableFlag( true );
-    m_pppcRDSbacCoder[0][CI_CURR_BEST]->resetBits();
-    pRDSbacCoder->setBinsCoded( 0 );
-
-    // encode CTU and calculate the true bit counters.
-    m_pcCuEncoder->encodeCtu( pCtu );
-
-
-    pRDSbacCoder->setBinCountingEnableFlag( false );
-
-    const Int numberOfWrittenBits = m_pcEntropyCoder->getNumberOfWrittenBits();
-
-    // Calculate if this CTU puts us over slice bit size.
-    // cannot terminate if current slice/slice-segment would be 0 Ctu in size,
-    const UInt validEndOfSliceCtuTsAddr = ctuTsAddr + (ctuTsAddr == startCtuTsAddr ? 1 : 0);
-    // Set slice end parameter
-    if(pcSlice->getSliceMode()==FIXED_NUMBER_OF_BYTES && pcSlice->getSliceBits()+numberOfWrittenBits > (pcSlice->getSliceArgument()<<3))
-    {
-      pcSlice->setSliceSegmentCurEndCtuTsAddr(validEndOfSliceCtuTsAddr);
-      pcSlice->setSliceCurEndCtuTsAddr(validEndOfSliceCtuTsAddr);
-      boundingCtuTsAddr=validEndOfSliceCtuTsAddr;
-    }
-    else if((!bCompressEntireSlice) && pcSlice->getSliceSegmentMode()==FIXED_NUMBER_OF_BYTES && pcSlice->getSliceSegmentBits()+numberOfWrittenBits > (pcSlice->getSliceSegmentArgument()<<3))
-    {
-      pcSlice->setSliceSegmentCurEndCtuTsAddr(validEndOfSliceCtuTsAddr);
-      boundingCtuTsAddr=validEndOfSliceCtuTsAddr;
-    }
-
-    if (boundingCtuTsAddr <= ctuTsAddr)
-    {
-      break;
-    }
-
-    pcSlice->setSliceBits( (UInt)(pcSlice->getSliceBits() + numberOfWrittenBits) );
-    pcSlice->setSliceSegmentBits(pcSlice->getSliceSegmentBits()+numberOfWrittenBits);
-
-    // Store probabilities of second CTU in line into buffer - used only if wavefront-parallel-processing is enabled.
-    if ( ctuXPosInCtus == tileXPosInCtus+1 && m_pcCfg->getEntropyCodingSyncEnabledFlag())
-    {
-      m_entropyCodingSyncContextState.loadContexts(m_pppcRDSbacCoder[0][CI_CURR_BEST]);
-    }
-
-
-    if ( m_pcCfg->getUseRateCtrl() )
-    {
-      Int actualQP        = g_RCInvalidQPValue;
-      Double actualLambda = m_pcRdCost->getLambda();
-      Int actualBits      = pCtu->getTotalBits();
-      Int numberOfEffectivePixels    = 0;
-
-#if JVET_M0600_RATE_CTRL
-      Int numberOfSkipPixel = 0;      
-      for (Int idx = 0; idx < pcPic->getNumPartitionsInCtu(); idx++)
-      {
-        
-        numberOfSkipPixel += 16 * pCtu->isSkipped(idx);
-      }
-#endif
-
-      for ( Int idx = 0; idx < pcPic->getNumPartitionsInCtu(); idx++ )
-      {
-        if ( pCtu->getPredictionMode( idx ) != NUMBER_OF_PREDICTION_MODES && ( !pCtu->isSkipped( idx ) ) )
-        {
-          numberOfEffectivePixels = numberOfEffectivePixels + 16;
-          break;
-        }
-      }
-
-#if JVET_M0600_RATE_CTRL
-      Double skipRatio = (Double)numberOfSkipPixel / m_pcRateCtrl->getRCPic()->getLCU(ctuTsAddr).m_numberOfPixel;
-#endif
-
-      if ( numberOfEffectivePixels == 0 )
-      {
-        actualQP = g_RCInvalidQPValue;
-      }
-      else
-      {
-        actualQP = pCtu->getQP( 0 );
-      }
-#if JVET_K0390_RATE_CTRL
-      m_pcRateCtrl->getRCPic()->getLCU(ctuTsAddr).m_actualMSE = (Double)pCtu->getTotalDistortion() / (Double)m_pcRateCtrl->getRCPic()->getLCU(ctuTsAddr).m_numberOfPixel;
-#endif
-      m_pcRdCost->setLambda(oldLambda, pcSlice->getSPS()->getBitDepths());
-#if JVET_M0600_RATE_CTRL
-      m_pcRateCtrl->getRCPic()->updateAfterCTU(m_pcRateCtrl->getRCPic()->getLCUCoded(), actualBits, actualQP, actualLambda, skipRatio,
-        pCtu->getSlice()->getSliceType() == I_SLICE ? 0 : m_pcCfg->getLCULevelRC());
-#else
-      m_pcRateCtrl->getRCPic()->updateAfterCTU( m_pcRateCtrl->getRCPic()->getLCUCoded(), actualBits, actualQP, actualLambda,
-                                                pCtu->getSlice()->getSliceType() == I_SLICE ? 0 : m_pcCfg->getLCULevelRC() );
-#endif
-    }
-
-    m_uiPicTotalBits += pCtu->getTotalBits();
-    m_dPicRdCost     += pCtu->getTotalCost();
-    m_uiPicDist      += pCtu->getTotalDistortion();
+    compressOneCtu(pcPic, ctuTsAddr, bCompressEntireSlice, bFastDeltaQP, tempBitCounter, pRDSbacCoder);    
   }
 
+  if (doTBR)
+  {
+    int TsIdx, redo;
+    for (int j = m_pcCfg->getTBRCtuStartY(); j <= m_pcCfg->getTBRCtuEndY(); j++)
+      for (int i = m_pcCfg->getTBRCtuStartX(); i <= m_pcCfg->getTBRCtuEndX(); i++)
+      {
+        redo = 0x4;
+        redo |= (j == m_pcCfg->getTBRCtuEndY()) ? 0x2 : 0x0;
+        redo |= (i == m_pcCfg->getTBRCtuEndX()) ? 0x1 : 0x0;
+        TsIdx = j * pcPic->getFrameWidthInCtus() + i;
+        compressOneCtu(pcPic, TsIdx, bCompressEntireSlice, bFastDeltaQP, tempBitCounter, pRDSbacCoder, redo);
+      }
+  }
 
   // store context state at the end of this slice-segment, in case the next slice is a dependent slice and continues using the CABAC contexts.
   if( pcSlice->getPPS()->getDependentSliceSegmentsEnabledFlag() )
@@ -997,120 +1033,169 @@ Void TEncSlice::encodeSlice   ( TComPic* pcPic, TComOutputBitstream* pcSubstream
     }
   }
 
+  const int numCtu = 28;
+  binStorage all_ctu_storages[numCtu];
+  const int writeOrder = 1; // 1: default order   2: record-write ctu    3: record-write frame
+  const int numPass = writeOrder == 3 ? 2 : 1;
+
   // for every CTU in the slice segment...
-
-  for( UInt ctuTsAddr = startCtuTsAddr; ctuTsAddr < boundingCtuTsAddr; ++ctuTsAddr )
+  for (UInt pass = 1; pass <= numPass; pass++)
   {
-    const UInt ctuRsAddr = pcPic->getPicSym()->getCtuTsToRsAddrMap(ctuTsAddr);
-    const TComTile &currentTile = *(pcPic->getPicSym()->getTComTile(pcPic->getPicSym()->getTileIdxMap(ctuRsAddr)));
-    const UInt firstCtuRsAddrOfTile = currentTile.getFirstCtuRsAddr();
-    const UInt tileXPosInCtus       = firstCtuRsAddrOfTile % frameWidthInCtus;
-    const UInt tileYPosInCtus       = firstCtuRsAddrOfTile / frameWidthInCtus;
-    const UInt ctuXPosInCtus        = ctuRsAddr % frameWidthInCtus;
-    const UInt ctuYPosInCtus        = ctuRsAddr / frameWidthInCtus;
-    const UInt uiSubStrm=pcPic->getSubstreamForCtuAddr(ctuRsAddr, true, pcSlice);
-    TComDataCU* pCtu = pcPic->getCtu( ctuRsAddr );
-
-    m_pcEntropyCoder->setBitstream( &pcSubstreams[uiSubStrm] );
-
-    // set up CABAC contexts' state for this CTU
-    if (ctuRsAddr == firstCtuRsAddrOfTile)
+    Bool isLastPass = pass == numPass;
+    for (UInt ctuTsAddr = startCtuTsAddr; ctuTsAddr < boundingCtuTsAddr; ++ctuTsAddr)
     {
-      if (ctuTsAddr != startCtuTsAddr) // if it is the first CTU, then the entropy coder has already been reset
+      const UInt ctuRsAddr = pcPic->getPicSym()->getCtuTsToRsAddrMap(ctuTsAddr);
+      const TComTile& currentTile = *(pcPic->getPicSym()->getTComTile(pcPic->getPicSym()->getTileIdxMap(ctuRsAddr)));
+      const UInt firstCtuRsAddrOfTile = currentTile.getFirstCtuRsAddr();
+      const UInt tileXPosInCtus = firstCtuRsAddrOfTile % frameWidthInCtus;
+      const UInt tileYPosInCtus = firstCtuRsAddrOfTile / frameWidthInCtus;
+      const UInt ctuXPosInCtus = ctuRsAddr % frameWidthInCtus;
+      const UInt ctuYPosInCtus = ctuRsAddr / frameWidthInCtus;
+      const UInt uiSubStrm = pcPic->getSubstreamForCtuAddr(ctuRsAddr, true, pcSlice);
+      TComDataCU* pCtu = pcPic->getCtu(ctuRsAddr);
+
+      m_pcEntropyCoder->setBitstream(&pcSubstreams[uiSubStrm]);
+
+      // set up CABAC contexts' state for this CTU
+      if (ctuRsAddr == firstCtuRsAddrOfTile)
       {
-        m_pcEntropyCoder->resetEntropy(pcSlice);
-      }
-    }
-    else if (ctuXPosInCtus == tileXPosInCtus && wavefrontsEnabled)
-    {
-      // Synchronize cabac probabilities with upper-right CTU if it's available and at the start of a line.
-      if (ctuTsAddr != startCtuTsAddr) // if it is the first CTU, then the entropy coder has already been reset
-      {
-        m_pcEntropyCoder->resetEntropy(pcSlice);
-      }
-      TComDataCU *pCtuUp = pCtu->getCtuAbove();
-      if ( pCtuUp && ((ctuRsAddr%frameWidthInCtus+1) < frameWidthInCtus)  )
-      {
-        TComDataCU *pCtuTR = pcPic->getCtu( ctuRsAddr - frameWidthInCtus + 1 );
-        if ( pCtu->CUIsFromSameSliceAndTile(pCtuTR) )
+        if (ctuTsAddr != startCtuTsAddr) // if it is the first CTU, then the entropy coder has already been reset
         {
-          // Top-right is available, so use it.
-          m_pcSbacCoder->loadContexts( &m_entropyCodingSyncContextState );
+          m_pcEntropyCoder->resetEntropy(pcSlice);
         }
       }
-    }
-
-
-    if ( pcSlice->getSPS()->getUseSAO() )
-    {
-      Bool bIsSAOSliceEnabled = false;
-      Bool sliceEnabled[MAX_NUM_COMPONENT];
-      for(Int comp=0; comp < MAX_NUM_COMPONENT; comp++)
+      else if (ctuXPosInCtus == tileXPosInCtus && wavefrontsEnabled)
       {
-        ComponentID compId=ComponentID(comp);
-        sliceEnabled[compId] = pcSlice->getSaoEnabledFlag(toChannelType(compId)) && (comp < pcPic->getNumberValidComponents());
-        if (sliceEnabled[compId])
+        // Synchronize cabac probabilities with upper-right CTU if it's available and at the start of a line.
+        if (ctuTsAddr != startCtuTsAddr) // if it is the first CTU, then the entropy coder has already been reset
         {
-          bIsSAOSliceEnabled=true;
+          m_pcEntropyCoder->resetEntropy(pcSlice);
+        }
+        TComDataCU* pCtuUp = pCtu->getCtuAbove();
+        if (pCtuUp && ((ctuRsAddr % frameWidthInCtus + 1) < frameWidthInCtus))
+        {
+          TComDataCU* pCtuTR = pcPic->getCtu(ctuRsAddr - frameWidthInCtus + 1);
+          if (pCtu->CUIsFromSameSliceAndTile(pCtuTR))
+          {
+            // Top-right is available, so use it.
+            m_pcSbacCoder->loadContexts(&m_entropyCodingSyncContextState);
+          }
         }
       }
-      if (bIsSAOSliceEnabled)
+
+
+      if (pcSlice->getSPS()->getUseSAO())
       {
-        SAOBlkParam& saoblkParam = (pcPic->getPicSym()->getSAOBlkParam())[ctuRsAddr];
-
-        Bool leftMergeAvail = false;
-        Bool aboveMergeAvail= false;
-        //merge left condition
-        Int rx = (ctuRsAddr % frameWidthInCtus);
-        if(rx > 0)
+        Bool bIsSAOSliceEnabled = false;
+        Bool sliceEnabled[MAX_NUM_COMPONENT];
+        for (Int comp = 0; comp < MAX_NUM_COMPONENT; comp++)
         {
-          leftMergeAvail = pcPic->getSAOMergeAvailability(ctuRsAddr, ctuRsAddr-1);
+          ComponentID compId = ComponentID(comp);
+          sliceEnabled[compId] = pcSlice->getSaoEnabledFlag(toChannelType(compId)) && (comp < pcPic->getNumberValidComponents());
+          if (sliceEnabled[compId])
+          {
+            bIsSAOSliceEnabled = true;
+          }
         }
-
-        //merge up condition
-        Int ry = (ctuRsAddr / frameWidthInCtus);
-        if(ry > 0)
+        if (bIsSAOSliceEnabled)
         {
-          aboveMergeAvail = pcPic->getSAOMergeAvailability(ctuRsAddr, ctuRsAddr-frameWidthInCtus);
-        }
+          SAOBlkParam& saoblkParam = (pcPic->getPicSym()->getSAOBlkParam())[ctuRsAddr];
 
-        m_pcEntropyCoder->encodeSAOBlkParam(saoblkParam, pcPic->getPicSym()->getSPS().getBitDepths(), sliceEnabled, leftMergeAvail, aboveMergeAvail);
+          Bool leftMergeAvail = false;
+          Bool aboveMergeAvail = false;
+          //merge left condition
+          Int rx = (ctuRsAddr % frameWidthInCtus);
+          if (rx > 0)
+          {
+            leftMergeAvail = pcPic->getSAOMergeAvailability(ctuRsAddr, ctuRsAddr - 1);
+          }
+
+          //merge up condition
+          Int ry = (ctuRsAddr / frameWidthInCtus);
+          if (ry > 0)
+          {
+            aboveMergeAvail = pcPic->getSAOMergeAvailability(ctuRsAddr, ctuRsAddr - frameWidthInCtus);
+          }
+
+          m_pcEntropyCoder->encodeSAOBlkParam(saoblkParam, pcPic->getPicSym()->getSPS().getBitDepths(), sliceEnabled, leftMergeAvail, aboveMergeAvail);
+        }
       }
-    }
 
 #if ENC_DEC_TRACE
-    g_bJustDoIt = g_bEncDecTraceEnable;
+      g_bJustDoIt = g_bEncDecTraceEnable;
 #endif
-      m_pcCuEncoder->encodeCtu( pCtu );
-#if ENC_DEC_TRACE
-    g_bJustDoIt = g_bEncDecTraceDisable;
-#endif
-
-    //Store probabilities of second CTU in line into buffer
-    if ( ctuXPosInCtus == tileXPosInCtus+1 && wavefrontsEnabled)
-    {
-      m_entropyCodingSyncContextState.loadContexts( m_pcSbacCoder );
-    }
-
-    // terminate the sub-stream, if required (end of slice-segment, end of tile, end of wavefront-CTU-row):
-    if (ctuTsAddr+1 == boundingCtuTsAddr ||
-         (  ctuXPosInCtus + 1 == tileXPosInCtus + currentTile.getTileWidthInCtus() &&
-          ( ctuYPosInCtus + 1 == tileYPosInCtus + currentTile.getTileHeightInCtus() || wavefrontsEnabled)
-         )
-       )
-    {
-      m_pcEntropyCoder->encodeTerminatingBit(1);
-      m_pcEntropyCoder->encodeSliceFinish();
-      // Byte-alignment in slice_data() when new tile
-      pcSubstreams[uiSubStrm].writeByteAlignment();
-
-      // write sub-stream size
-      if (ctuTsAddr+1 != boundingCtuTsAddr)
+      if (writeOrder == 1)
       {
-        pcSlice->addSubstreamSize( (pcSubstreams[uiSubStrm].getNumberOfWrittenBits() >> 3) + pcSubstreams[uiSubStrm].countStartCodeEmulations() );
+        m_pcCuEncoder->encodeCtu(pCtu);
       }
-    }
-  } // CTU-loop
+      else
+      {
+        // Recording
+        m_pcCuEncoder->resetStorage();
+        m_pcCuEncoder->setIsRecording(true);
+        m_pcCuEncoder->encodeCtu(pCtu);
+
+        // Writing
+        if (writeOrder == 2)
+        {
+          m_pcCuEncoder->setIsRecording(false);
+          m_pcCuEncoder->encodeStorage();
+        }
+        
+        if (writeOrder == 3)
+        {
+          if (!isLastPass)
+          {
+            m_pcCuEncoder->getStorage(all_ctu_storages[ctuRsAddr]);
+          }
+          else
+          {
+            m_pcCuEncoder->setIsRecording(false);
+            m_pcCuEncoder->encodeStorage();
+          }
+        }        
+      }
+
+#if ENC_DEC_TRACE
+      g_bJustDoIt = g_bEncDecTraceDisable;
+#endif
+
+      //Store probabilities of second CTU in line into buffer
+      if (ctuXPosInCtus == tileXPosInCtus + 1 && wavefrontsEnabled)
+      {
+        m_entropyCodingSyncContextState.loadContexts(m_pcSbacCoder);
+      }
+
+      // terminate the sub-stream, if required (end of slice-segment, end of tile, end of wavefront-CTU-row):
+      if ( isLastPass && (ctuTsAddr + 1 == boundingCtuTsAddr ||
+        (ctuXPosInCtus + 1 == tileXPosInCtus + currentTile.getTileWidthInCtus() &&
+          (ctuYPosInCtus + 1 == tileYPosInCtus + currentTile.getTileHeightInCtus() || wavefrontsEnabled)
+          ))
+        )
+      {
+        m_pcEntropyCoder->encodeTerminatingBit(1);
+        m_pcEntropyCoder->encodeSliceFinish();
+        // Byte-alignment in slice_data() when new tile
+        pcSubstreams[uiSubStrm].writeByteAlignment();
+
+        // write sub-stream size
+        if (ctuTsAddr + 1 != boundingCtuTsAddr)
+        {
+          pcSlice->addSubstreamSize((pcSubstreams[uiSubStrm].getNumberOfWrittenBits() >> 3) + pcSubstreams[uiSubStrm].countStartCodeEmulations());
+        }
+      }
+    } // CTU-loop
+  }
+
+  // write all ctus at once 
+  //if (writeOrder == 3)
+  //{
+  //  m_pcCuEncoder->setIsRecording(false);
+  //  for (UInt ctuTsAddr = startCtuTsAddr; ctuTsAddr < boundingCtuTsAddr; ++ctuTsAddr)
+  //  {
+  //    m_pcCuEncoder->encodeStorage(all_ctu_storages[ctuTsAddr]);
+  //  }
+  //}
 
   if( depSliceSegmentsEnabled )
   {

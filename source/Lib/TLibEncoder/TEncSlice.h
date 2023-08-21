@@ -124,6 +124,7 @@ public:
   // compress and encode slice
   Void    precompressSlice    ( TComPic* pcPic                                     );      ///< precompress slice for multi-loop slice-level QP opt.
   Void    compressSlice       ( TComPic* pcPic, const Bool bCompressEntireSlice, const Bool bFastDeltaQP );      ///< analysis stage of slice
+  Void    compressOneCtu      ( TComPic* pcPic, UInt ctuTsAddr, const Bool bCompressEntireSlice, const Bool bFastDeltaQP, TComBitCounter  tempBitCounter, TEncBinCABAC* pRDSbacCoder, int redo = 0);
   Void    calCostSliceI       ( TComPic* pcPic );
   Void    encodeSlice         ( TComPic* pcPic, TComOutputBitstream* pcSubstreams, UInt &numBinsCoded );
 

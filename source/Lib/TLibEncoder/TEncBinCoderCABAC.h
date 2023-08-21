@@ -69,6 +69,10 @@ public:
   Void  encodeBinEP       ( UInt  binValue                            );
   Void  encodeBinsEP      ( UInt  binValues, Int numBins              );
   Void  encodeBinTrm      ( UInt  binValue                            );
+  Void  resetStorage      ();
+  Void  encodeStorage     ();
+  Void  getStorage        ( binStorage &storage );
+  Void  setStorage        ( binStorage storage );
 
   Void  align             ();
   Void  encodeAlignedBinsEP( UInt  binValues, Int numBins             );
@@ -80,6 +84,8 @@ public:
   UInt  getBinsCoded              ()              { return m_uiBinsCoded;                }
   Void  setBinCountingEnableFlag  ( Bool bFlag )  { m_binCountIncrement = bFlag ? 1 : 0; }
   Bool  getBinCountingEnableFlag  ()              { return m_binCountIncrement != 0;     }
+  Void  setIsRecording            ( Bool bFlag )  { m_bIsRecording = bFlag; }
+  Bool  getIsRecording            ()              { return m_bIsRecording; }
 
 #if FAST_BIT_EST
 protected:
@@ -91,14 +97,24 @@ private:
 
   TComBitIf*          m_pcTComBitIf;
   UInt                m_uiLow;
+  UInt                m_uiLow_backup;
   UInt                m_uiRange;
+  UInt                m_uiRange_backup;
   UInt                m_bufferedByte;
   Int                 m_numBufferedBytes;
+  Int                 m_numBufferedBytes_backup;
   Int                 m_bitsLeft;
+  Int                 m_bitsLeft_backup;
   UInt                m_uiBinsCoded;
+  UInt                m_uiBinsCoded_backup;
   Int                 m_binCountIncrement;
+  Int                 m_binCountIncrement_backup;
+
+  Bool                m_bIsRecording;
+  binStorage          m_storage;
 #if FAST_BIT_EST
   UInt64 m_fracBits;
+  UInt64 m_fracBits_backup;
 #endif
 };
 

@@ -46,6 +46,7 @@
 #include <vector>
 #include <stdio.h>
 #include "CommonDef.h"
+#include "TLibCommon/ContextModel.h"
 
 //! \ingroup TLibCommon
 //! \{
@@ -53,6 +54,31 @@
 // ====================================================================================================================
 // Class definition
 // ====================================================================================================================
+
+struct StorageEntry
+{
+  ContextModel* ctxModel;
+  UInt  codeValue;
+  Int   param;
+  UInt  codeMode; // 1: context-coded  2: EP   3: EPs    4: AlignedEPs    5: Trm
+};
+
+class binStorage
+{
+private:
+  StorageEntry* storedEntries;
+  int m_entry_count;
+  int m_cur_pointer;
+public:
+  binStorage(int size, int** list)            {    m_entry_count = 0;   m_cur_pointer = 0;    storedEntries = new StorageEntry[MAX_NUM_ENTRY];  }
+  void operator=(binStorage storage)          {    m_entry_count = storage.m_entry_count;   m_cur_pointer = storage.m_cur_pointer;    memcpy(storedEntries, storage.storedEntries, m_entry_count * sizeof(StorageEntry));  }
+  binStorage()                                {    m_entry_count = 0;   m_cur_pointer = 0;    storedEntries = new StorageEntry[MAX_NUM_ENTRY];  };
+  Void reset()                                {    m_entry_count = 0;   m_cur_pointer = 0;  }
+  Void addEntryToStorage(StorageEntry entry)  {    storedEntries[m_entry_count++] = entry;  }
+  StorageEntry getEntry(UInt idx)             {    return storedEntries[idx];  }
+  StorageEntry getCurEntry()                  {    return storedEntries[m_cur_pointer++];  }
+  UInt getSize()                              {    return m_entry_count;  }
+};
 
 /// pure virtual class for basic bit handling
 class TComBitIf

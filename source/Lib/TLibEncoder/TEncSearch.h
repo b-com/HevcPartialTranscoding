@@ -171,6 +171,7 @@ public:
                                   TComYuv*    pcPredYuv,
                                   TComYuv*    pcResiYuv,
                                   TComYuv*    pcRecoYuv,
+                                  Bool        redo,
                                   Pel         resiLuma[NUMBER_OF_STORED_RESIDUAL_TYPES][MAX_CU_SIZE * MAX_CU_SIZE]
                                   DEBUG_STRING_FN_DECLARE(sDebug));
 
@@ -179,6 +180,7 @@ public:
                                   TComYuv*    pcPredYuv,
                                   TComYuv*    pcResiYuv,
                                   TComYuv*    pcRecoYuv,
+                                  Bool        redo,
                                   Pel         resiLuma[NUMBER_OF_STORED_RESIDUAL_TYPES][MAX_CU_SIZE * MAX_CU_SIZE]
                                   DEBUG_STRING_FN_DECLARE(sDebug));
 
@@ -244,6 +246,7 @@ protected:
                                     const Bool          checkCrossCPrediction,
                                           Distortion&   ruiDist,
                                     const ComponentID   compID,
+                                          Bool          redo,
                                           TComTU        &rTu
                                     DEBUG_STRING_FN_DECLARE(sTest)
                                          ,Int           default0Save1Load2 = 0
@@ -258,6 +261,7 @@ protected:
                                     Bool         bCheckFirst,
 #endif
                                     Double&      dRDCost,
+                                    Bool         redo,
                                     TComTU      &rTu
                                     DEBUG_STRING_FN_DECLARE(sDebug));
 
@@ -286,6 +290,7 @@ protected:
                                     TComYuv*    pcResiYuv,
                                     Pel         resiLuma[NUMBER_OF_STORED_RESIDUAL_TYPES][MAX_CU_SIZE * MAX_CU_SIZE],
                                     Distortion& ruiDist,
+                                    Bool        redo,
                                     TComTU      &rTu
                                     DEBUG_STRING_FN_DECLARE(sDebug));
 

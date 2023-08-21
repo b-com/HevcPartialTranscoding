@@ -153,6 +153,11 @@ public:
   Void codeCoeffNxN            ( TComTU &rTu, TCoeff* pcCoef, const ComponentID compID );
   Void codeTransformSkipFlags ( TComTU &rTu, ComponentID component );
 
+  Void resetStorage           ();
+  Void codeStorage            ( binStorage storage );
+  Void codeStorage            ();
+  Void getStorage             ( binStorage &storage );
+  Void makeBackupCotexts      ( TEncSbac* src );
   // -------------------------------------------------------------------------------------------------------------------
   // for RD-optimizatioon
   // -------------------------------------------------------------------------------------------------------------------

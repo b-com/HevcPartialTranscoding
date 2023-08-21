@@ -158,6 +158,11 @@ Void TAppEncTop::xInitLibCfg()
 
   //===== Slice ========
 
+  m_cTEncTop.setTBRCtuStartX                                      ( m_TBRCtuStartX );
+  m_cTEncTop.setTBRCtuStartY                                      ( m_TBRCtuStartY );
+  m_cTEncTop.setTBRCtuEndX                                        ( m_TBRCtuEndX );
+  m_cTEncTop.setTBRCtuEndY                                        ( m_TBRCtuEndY );
+
   //====== Loop/Deblock Filter ========
   m_cTEncTop.setLoopFilterDisable                                 ( m_bLoopFilterDisable       );
   m_cTEncTop.setLoopFilterOffsetInPPS                             ( m_loopFilterOffsetInPPS );
@@ -570,8 +575,40 @@ Void TAppEncTop::xInitLibCfg()
 #endif
 }
 
+int logo_map[64][64];
+Bool bIsMapSet_tmp = false;
+
 Void TAppEncTop::xCreateLib()
 {
+  const int thr = 200;
+  const int map_size = 64;
+  std::ifstream file;
+  file.open(m_inputFileNameReplaceContent);
+
+  if (!file.fail())
+  {
+
+    std::string line;
+    for (int j = 0; std::getline(file, line); j++)
+    {
+      size_t pos = 0;
+      std::string token;
+      int i = 0;
+      while ((pos = line.find(" ")) != std::string::npos) {
+        token = line.substr(0, pos);
+        if (token.size() > 0)
+          logo_map[j][i++] = stoi(token);
+        line.erase(0, pos + 1);
+      }
+    }
+    file.close();
+  }
+  else
+  {
+    fprintf(stdout, "ERROR: Failed to open input file containt the replace content: %s\n", m_inputFileNameReplaceContent.c_str());
+    exit(0);
+  }
+
   // Video I/O
   m_cTVideoIOYuvInputFile.open( m_inputFileName,     false, m_inputBitDepth, m_MSBExtendedBitDepth, m_internalBitDepth );  // read  mode
   m_cTVideoIOYuvInputFile.skipFrames(m_FrameSkip, m_inputFileWidth, m_inputFileHeight, m_InputChromaFormatIDC);

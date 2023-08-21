@@ -231,10 +231,75 @@ Void TEncCu::init( TEncTop* pcEncTop )
 // Public member functions
 // ====================================================================================================================
 
+Void  TEncCu::prepareRecBuffers(TComDataCU*& rpcBestCU, const UInt uiDepth)
+{
+  TComPic* pcPic = rpcBestCU->getPic();
+  TComPicYuv* recoPic = rpcBestCU->getPic()->getPicYuvRec(); // TODO: Using recoPic in the else block below is not clean.
+  UInt ctuRsAddr = rpcBestCU->getCtuRsAddr();
+  UInt uiAbsZorderIdx = rpcBestCU->getZorderIdxInCtu();
+  const int ctu_size = rpcBestCU->getSlice()->getSPS()->getMaxCUWidth();
+
+  if (!bIsMapSet_tmp)
+  {
+    //bIsMapSet_tmp = true; // because it should be done once (TODO: do it in a cleaner way)
+    TComPicYuv raplaceContent; // TODO: Implement the below buffer initialization only once and outside the RDO loop.
+    raplaceContent.create(recoPic->getWidth(COMPONENT_Y), recoPic->getHeight(COMPONENT_Y), recoPic->getChromaFormat(), ctu_size, ctu_size, 4, true);
+    const int margin = 3;
+    const Bool transparent = false;
+    for (UInt comp = 0; comp < MAX_NUM_COMPONENT; comp++)
+    {
+      const int comp_shift = comp == 0 ? 0 : 1;
+      int end_x = ((((ctuRsAddr % pcPic->getFrameWidthInCtus()) + 1) * ctu_size) >> comp_shift) - 1;
+      int end_y = ((((ctuRsAddr / pcPic->getFrameWidthInCtus()) + 1) * ctu_size) >> comp_shift) - 1;
+      int start_x = ((ctuRsAddr % pcPic->getFrameWidthInCtus()) * ctu_size) >> comp_shift;
+      int start_y = ((ctuRsAddr / pcPic->getFrameWidthInCtus()) * ctu_size) >> comp_shift;
+      const UInt stride = recoPic->getStride((ComponentID)comp);
+      Pel* dst = raplaceContent.getAddr((ComponentID)comp);
+      Pel* cur = recoPic->getAddr((ComponentID)comp);
+      for (UInt row = 0; row < raplaceContent.getHeight((ComponentID)comp); row++)
+      {
+        for (UInt col = 0; col < raplaceContent.getWidth((ComponentID)comp); col++)
+        {
+          if (col <= end_x && col >= start_x && row <= end_y && row >= start_y) // inside
+          {
+            if ((col > end_x - (margin >> comp_shift) && col <= end_x) || (row > end_y - (margin >> comp_shift) && row <= end_y)) // border pixel
+              dst[col] = cur[col];
+            else
+            {
+              if (comp == COMPONENT_Y)
+              {
+                dst[col] = logo_map[row % ctu_size][col % ctu_size];
+                //dst[col] = logo_map[row % ctu_size][col % ctu_size] ? logo_map[row % ctu_size][col % ctu_size] : (transparent ? cur[col] : 255);
+              }
+              else
+                dst[col] = 128; // because current map only contains luma values
+            }
+          }
+        }
+        dst += stride;
+        cur += stride;
+      }
+    }
+    overwriteBuffer(&raplaceContent, ctuRsAddr, uiAbsZorderIdx, uiDepth, false);
+  }
+  return;
+}
+
+Void  TEncCu::overwriteBuffer(TComPicYuv* src, UInt ctuRsAddr, UInt uiAbsZorderIdx, UInt uiDepth, Bool bIsTransparent)
+{
+  /*
+  It is odd that this is working!
+  Because it's permanently overwriting the original buffer.
+  And normally this should mess up RDO at some point.
+  */
+  m_ppcOrigYuv[uiDepth]->copyFromPicYuv(src, ctuRsAddr, uiAbsZorderIdx);
+  return;
+}
+
 /** 
  \param  pCtu pointer of CU data class
  */
-Void TEncCu::compressCtu( TComDataCU* pCtu )
+Void TEncCu::compressCtu( TComDataCU* pCtu, int redo )
 {
   // initialize CU data
   m_ppcBestCU[0]->initCtu( pCtu->getPic(), pCtu->getCtuRsAddr() );
@@ -244,7 +309,7 @@ Void TEncCu::compressCtu( TComDataCU* pCtu )
   // analysis of CU
   DEBUG_STRING_NEW(sDebug)
 
-  xCompressCU( m_ppcBestCU[0], m_ppcTempCU[0], 0 DEBUG_STRING_PASS_INTO(sDebug) );
+  xCompressCU( m_ppcBestCU[0], m_ppcTempCU[0], 0 DEBUG_STRING_PASS_INTO(sDebug), redo);
   DEBUG_STRING_OUTPUT(std::cout, sDebug)
 
 #if ADAPTIVE_QP_SELECTION
@@ -257,6 +322,31 @@ Void TEncCu::compressCtu( TComDataCU* pCtu )
   }
 #endif
 }
+
+Void TEncCu::resetStorage()
+{
+  m_pcEntropyCoder->m_pcEntropyCoderIf->resetStorage();
+  return;
+}
+
+Void TEncCu::encodeStorage( binStorage storage)
+{
+  m_pcEntropyCoder->m_pcEntropyCoderIf->codeStorage( storage );
+  return;
+}
+
+Void TEncCu::encodeStorage()
+{
+  m_pcEntropyCoder->m_pcEntropyCoderIf->codeStorage();
+  return;
+}
+
+Void TEncCu::getStorage( binStorage &storage )
+{  
+  m_pcEntropyCoder->m_pcEntropyCoderIf->getStorage(storage);
+  return;
+}
+
 /** \param  pCtu  pointer of CU data class
  */
 Void TEncCu::encodeCtu ( TComDataCU* pCtu )
@@ -519,7 +609,7 @@ Void TEncCu::deriveTestModeAMP (TComDataCU *pcBestCU, PartSize eParentPartSize, 
  *  - for loop of QP value to compress the current CU with all possible QP
 */
 #if AMP_ENC_SPEEDUP
-Void TEncCu::xCompressCU( TComDataCU*& rpcBestCU, TComDataCU*& rpcTempCU, const UInt uiDepth DEBUG_STRING_FN_DECLARE(sDebug_), PartSize eParentPartSize )
+Void TEncCu::xCompressCU( TComDataCU*& rpcBestCU, TComDataCU*& rpcTempCU, const UInt uiDepth DEBUG_STRING_FN_DECLARE(sDebug_), int redo, PartSize eParentPartSize )
 #else
 Void TEncCu::xCompressCU( TComDataCU*& rpcBestCU, TComDataCU*& rpcTempCU, const UInt uiDepth )
 #endif
@@ -695,7 +785,7 @@ Void TEncCu::xCompressCU( TComDataCU*& rpcBestCU, TComDataCU*& rpcTempCU, const 
       rpcTempCU->initEstData( uiDepth, iQP, bIsLosslessMode );
 
       // do inter modes, SKIP and 2Nx2N
-      if( rpcBestCU->getSlice()->getSliceType() != I_SLICE )
+      if( rpcBestCU->getSlice()->getSliceType() != I_SLICE && !redo)
       {
         // 2Nx2N
         if(m_pcEncCfg->getUseEarlySkipDetection())
@@ -725,11 +815,30 @@ Void TEncCu::xCompressCU( TComDataCU*& rpcBestCU, TComDataCU*& rpcTempCU, const 
       }
     }
 
-    if(!earlyDetectionSkipMode)
+    if(!earlyDetectionSkipMode || true)
     {
       for (Int iQP=iMinQP; iQP<=iMaxQP; iQP++)
       {
         const Bool bIsLosslessMode = isAddLowestQP && (iQP == iMinQP); // If lossless, then iQP is irrelevant for subsequent modules.
+        if (redo)
+        {
+          const int ctu_size = pcSlice->getSPS()->getMaxCUWidth();
+          Bool atBottom = (rpcBestCU->getCUPelY() + rpcBestCU->getHeight(0)) % ctu_size == 0;
+          Bool atRight = (rpcBestCU->getCUPelX() + rpcBestCU->getWidth(0)) % ctu_size == 0;
+          Bool isBottomLossless = redo & 0x2;
+          Bool isRightLossless = redo & 0x1;
+          if ( (atBottom && isBottomLossless) || (atRight && isRightLossless) ) // border CU
+          {
+            if (isAddLowestQP && !bIsLosslessMode)
+              continue; // only lossless on CUs covering the border
+          }
+
+          if (!bIsMapSet_tmp)
+          {
+            // bIsMapSet_tmp = true; // Not working for unknown reason (TODO: debug)
+            prepareRecBuffers(rpcBestCU, uiDepth);            
+          }
+        }
 
         if (bIsLosslessMode)
         {
@@ -903,13 +1012,13 @@ Void TEncCu::xCompressCU( TComDataCU*& rpcBestCU, TComDataCU*& rpcTempCU, const 
             )))
         {
 #endif 
-          xCheckRDCostIntra( rpcBestCU, rpcTempCU, SIZE_2Nx2N DEBUG_STRING_PASS_INTO(sDebug) );
+          xCheckRDCostIntra( rpcBestCU, rpcTempCU, redo, SIZE_2Nx2N DEBUG_STRING_PASS_INTO(sDebug) );
           rpcTempCU->initEstData( uiDepth, iQP, bIsLosslessMode );
           if( uiDepth == sps.getLog2DiffMaxMinCodingBlockSize() )
           {
             if( rpcTempCU->getWidth(0) > ( 1 << sps.getQuadtreeTULog2MinSize() ) )
             {
-              xCheckRDCostIntra( rpcBestCU, rpcTempCU, SIZE_NxN DEBUG_STRING_PASS_INTO(sDebug)   );
+              xCheckRDCostIntra( rpcBestCU, rpcTempCU, redo, SIZE_NxN DEBUG_STRING_PASS_INTO(sDebug)   );
               rpcTempCU->initEstData( uiDepth, iQP, bIsLosslessMode );
             }
           }
@@ -1037,12 +1146,12 @@ Void TEncCu::xCompressCU( TComDataCU*& rpcBestCU, TComDataCU*& rpcTempCU, const 
           DEBUG_STRING_NEW(sChild)
           if ( !(rpcBestCU->getTotalCost()!=MAX_DOUBLE && rpcBestCU->isInter(0)) )
           {
-            xCompressCU( pcSubBestPartCU, pcSubTempPartCU, uhNextDepth DEBUG_STRING_PASS_INTO(sChild), NUMBER_OF_PART_SIZES );
+            xCompressCU( pcSubBestPartCU, pcSubTempPartCU, uhNextDepth DEBUG_STRING_PASS_INTO(sChild), redo, NUMBER_OF_PART_SIZES );
           }
           else
           {
 
-            xCompressCU( pcSubBestPartCU, pcSubTempPartCU, uhNextDepth DEBUG_STRING_PASS_INTO(sChild), rpcBestCU->getPartitionSize(0) );
+            xCompressCU( pcSubBestPartCU, pcSubTempPartCU, uhNextDepth DEBUG_STRING_PASS_INTO(sChild), redo, rpcBestCU->getPartitionSize(0));
           }
           DEBUG_STRING_APPEND(sTempDebug, sChild)
 #else
@@ -1685,6 +1794,7 @@ Void TEncCu::xCheckRDCostInter( TComDataCU*& rpcBestCU, TComDataCU*& rpcTempCU, 
 
 Void TEncCu::xCheckRDCostIntra( TComDataCU *&rpcBestCU,
                                 TComDataCU *&rpcTempCU,
+                                Bool redo,
                                 PartSize     eSize
                                 DEBUG_STRING_FN_DECLARE(sDebug) )
 {
@@ -1710,13 +1820,13 @@ Void TEncCu::xCheckRDCostIntra( TComDataCU *&rpcBestCU,
 
   Pel resiLuma[NUMBER_OF_STORED_RESIDUAL_TYPES][MAX_CU_SIZE * MAX_CU_SIZE];
 
-  m_pcPredSearch->estIntraPredLumaQT( rpcTempCU, m_ppcOrigYuv[uiDepth], m_ppcPredYuvTemp[uiDepth], m_ppcResiYuvTemp[uiDepth], m_ppcRecoYuvTemp[uiDepth], resiLuma DEBUG_STRING_PASS_INTO(sTest) );
+  m_pcPredSearch->estIntraPredLumaQT( rpcTempCU, m_ppcOrigYuv[uiDepth], m_ppcPredYuvTemp[uiDepth], m_ppcResiYuvTemp[uiDepth], m_ppcRecoYuvTemp[uiDepth], redo, resiLuma DEBUG_STRING_PASS_INTO(sTest) );
 
   m_ppcRecoYuvTemp[uiDepth]->copyToPicComponent(COMPONENT_Y, rpcTempCU->getPic()->getPicYuvRec(), rpcTempCU->getCtuRsAddr(), rpcTempCU->getZorderIdxInCtu() );
 
   if (rpcBestCU->getPic()->getChromaFormat()!=CHROMA_400)
   {
-    m_pcPredSearch->estIntraPredChromaQT( rpcTempCU, m_ppcOrigYuv[uiDepth], m_ppcPredYuvTemp[uiDepth], m_ppcResiYuvTemp[uiDepth], m_ppcRecoYuvTemp[uiDepth], resiLuma DEBUG_STRING_PASS_INTO(sTest) );
+    m_pcPredSearch->estIntraPredChromaQT( rpcTempCU, m_ppcOrigYuv[uiDepth], m_ppcPredYuvTemp[uiDepth], m_ppcResiYuvTemp[uiDepth], m_ppcRecoYuvTemp[uiDepth], redo, resiLuma DEBUG_STRING_PASS_INTO(sTest) );
   }
 
   m_pcEntropyCoder->resetBits();

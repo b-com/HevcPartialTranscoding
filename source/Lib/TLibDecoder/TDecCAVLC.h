@@ -117,6 +117,9 @@ public:
 
   Void  parseExplicitRdpcmMode( TComTU &rTu, ComponentID compID );
 
+  Void setIsRecording       ( Bool b );
+  Bool getIsRecording       ();
+
 protected:
   Bool  xMoreRbspData();
 };

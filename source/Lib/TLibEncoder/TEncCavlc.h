@@ -47,6 +47,7 @@
 #include "TLibCommon/TComRom.h"
 #include "TEncEntropy.h"
 #include "SyntaxElementWriter.h"
+#include "TEncBinCoder.h"
 
 //! \ingroup TLibEncoder
 //! \{
@@ -140,6 +141,13 @@ public:
   Void xCodeScalingList ( const TComScalingList* scalingList, UInt sizeId, UInt listId);
 
   Void codeExplicitRdpcmMode( TComTU &rTu, const ComponentID compID );
+
+  Void resetStorage     ();
+  Void codeStorage      ();
+  Void codeStorage      ( binStorage storage );
+  Void getStorage       ( binStorage &storage );
+  Void setStorage       ( binStorage storage );
+  Void makeBackupCotexts( TEncSbac* src);
 };
 
 //! \}

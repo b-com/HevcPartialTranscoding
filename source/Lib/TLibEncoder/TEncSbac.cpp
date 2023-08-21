@@ -102,6 +102,34 @@ TEncSbac::~TEncSbac()
 // Public member functions
 // ====================================================================================================================
 
+Void TEncSbac::resetStorage()
+{
+  m_pcBinIf->resetStorage();
+}
+
+Void TEncSbac::makeBackupCotexts( TEncSbac* src )
+{  
+  xCopyFrom(src);
+  return;
+}
+
+Void TEncSbac::codeStorage( binStorage storage )
+{  
+  m_pcBinIf->setStorage(storage);
+  m_pcBinIf->encodeStorage();
+}
+
+Void TEncSbac::codeStorage()
+{
+  m_pcBinIf->encodeStorage();
+}
+
+Void TEncSbac::getStorage(binStorage &storage)
+{
+  m_pcBinIf->getStorage(storage);
+  return;
+}
+
 Void TEncSbac::resetEntropy           (const TComSlice *pSlice)
 {
   Int  iQp              = pSlice->getSliceQp();
@@ -621,6 +649,7 @@ Void TEncSbac::codeSplitFlag   ( TComDataCU* pcCU, UInt uiAbsPartIdx, UInt uiDep
   UInt uiCurrSplitFlag = ( pcCU->getDepth( uiAbsPartIdx ) > uiDepth ) ? 1 : 0;
 
   assert( uiCtx < 3 );
+
   m_pcBinIf->encodeBin( uiCurrSplitFlag, m_cCUSplitFlagSCModel.get( 0, 0, uiCtx ) );
   DTRACE_CABAC_VL( g_nSymbolCounter++ )
   DTRACE_CABAC_T( "\tSplitFlag\n" )

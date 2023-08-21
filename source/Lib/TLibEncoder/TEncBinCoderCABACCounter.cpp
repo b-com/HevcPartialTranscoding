@@ -65,6 +65,26 @@ UInt TEncBinCABACCounter::getNumWrittenBits()
   return m_pcTComBitIf->getNumberOfWrittenBits() + UInt( m_fracBits >> 15 );
 }
 
+Void TEncBinCABACCounter::resetStorage()
+{
+  return;
+}
+
+Void TEncBinCABACCounter::encodeStorage()
+{
+  return;
+}
+
+Void TEncBinCABACCounter::getStorage( binStorage &storage )
+{
+  return;
+}
+
+Void TEncBinCABACCounter::setStorage(binStorage storage)
+{
+  return;
+}
+
 /**
  * \brief Encode bin
  *

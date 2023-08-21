@@ -1683,6 +1683,17 @@ Void TDecSbac::parseSaoTypeIdx (UInt&  ruiVal)
   }
 }
 
+Void TDecSbac::setIsRecording(Bool b)
+{
+  m_pcTDecBinIf->setIsRecording(b);
+  return;
+}
+
+Bool TDecSbac::getIsRecording()
+{
+  return m_pcTDecBinIf->getIsRecording();
+}
+
 Void TDecSbac::parseSaoSign(UInt& val)
 {
   m_pcTDecBinIf->decodeBinEP ( val RExt__DECODER_DEBUG_BIT_STATISTICS_PASS_OPT_ARG(STATS__CABAC_BITS__SAO) );

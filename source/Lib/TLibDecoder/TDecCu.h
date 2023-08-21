@@ -96,6 +96,9 @@ public:
   /// reconstruct Ctu information
   Void  decompressCtu           ( TComDataCU* pCtu );
 
+  Void setIsRecording           ( Bool b )  { m_pcEntropyDecoder->setIsRecording(b); }
+  Bool getIsRecording           ()          { return m_pcEntropyDecoder->getIsRecording(); }
+
 protected:
 
   Void xDecodeCU                ( TComDataCU* const pcCU, const UInt uiAbsPartIdx, const UInt uiDepth, Bool &isLastCtuOfSliceSegment);

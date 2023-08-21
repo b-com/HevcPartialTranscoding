@@ -57,6 +57,10 @@ public:
   UInt  getNumWrittenBits ();
 
   Void  encodeBin         ( UInt  binValue,  ContextModel& rcCtxModel );
+  Void  resetStorage      ();
+  Void  encodeStorage     ();
+  Void  getStorage        ( binStorage &storage );
+  Void  setStorage        ( binStorage storage );
   Void  encodeBinEP       ( UInt  binValue                            );
   Void  encodeBinsEP      ( UInt  binValues, Int numBins              );
   Void  encodeBinTrm      ( UInt  binValue                            );

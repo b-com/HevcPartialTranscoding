@@ -774,6 +774,7 @@ Bool TAppEncCfg::parseCfg( Int argc, TChar* argv[] )
 
   // File, I/O and source parameters
   ("InputFile,i",                                     m_inputFileName,                             string(""), "Original YUV input file name")
+  ("InputFileReplaceContent",                         m_inputFileNameReplaceContent,               string(""), "Path to a .txt file containing the replace content.")
   ("InputPathPrefix,-ipp",                            inputPathPrefix,                             string(""), "pathname to prepend to input filename")
   ("BitstreamFile,b",                                 m_bitstreamFileName,                         string(""), "Bitstream output file name")
   ("ReconFile,o",                                     m_reconFileName,                             string(""), "Reconstructed YUV output file name")
@@ -936,6 +937,11 @@ Bool TAppEncCfg::parseCfg( Int argc, TChar* argv[] )
   ("RDOQTS",                                          m_useRDOQTS,                                       true)
   ("SelectiveRDOQ",                                   m_useSelectiveRDOQ,                               false, "Enable selective RDOQ")
   ("RDpenalty",                                       m_rdPenalty,                                          0,  "RD-penalty for 32x32 TU for intra in non-intra slices. 0:disabled  1:RD-penalty  2:maximum RD-penalty")
+
+  ("TBRCtuStartX",                                    m_TBRCtuStartX,                                      -1, "TBR CTU area start X. -1: Disabled")
+  ("TBRCtuStartY",                                    m_TBRCtuStartY,                                      -1, "TBR CTU area start y. -1: Disabled")
+  ("TBRCtuEndX",                                      m_TBRCtuEndX,                                        -1, "TBR CTU area end X. -1: Disabled")
+  ("TBRCtuEndY",                                      m_TBRCtuEndY,                                        -1, "TBR CTU area end y. -1: Disabled")
 
   // Deblocking filter parameters
   ("LoopFilterDisable",                               m_bLoopFilterDisable,                             false)
@@ -3203,6 +3209,7 @@ Int TAppEncCfg::xDPBUsage(std::ostream *pOs)
 
 Void TAppEncCfg::xPrintParameter()
 {
+  return;
   printf("\n");
   printf("Input          File                    : %s\n", m_inputFileName.c_str()          );
   printf("Bitstream      File                    : %s\n", m_bitstreamFileName.c_str()      );

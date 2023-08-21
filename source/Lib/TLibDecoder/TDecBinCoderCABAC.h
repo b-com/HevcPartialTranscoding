@@ -67,6 +67,8 @@ public:
   Void  decodeBinsEP      ( UInt& ruiBin, Int numBins              );
   Void  decodeAlignedBinsEP( UInt& ruiBins, Int numBins             );
 #endif
+  Void  setIsRecording(Bool bFlag) { m_bIsRecording = bFlag; }
+  Bool  getIsRecording() { return m_bIsRecording; }
 
   Void  align             ();
 
@@ -83,6 +85,9 @@ private:
   UInt                m_uiRange;
   UInt                m_uiValue;
   Int                 m_bitsNeeded;
+
+  binStorage          m_storage;
+  Bool                m_bIsRecording;
 };
 
 //! \}

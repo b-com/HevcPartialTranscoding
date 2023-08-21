@@ -46,6 +46,10 @@
 #include <utility>
 #include <iostream>
 
+
+#define MAX_NUM_ENTRY 1000000
+
+
 //! \ingroup TLibCommon
 //! \{
 

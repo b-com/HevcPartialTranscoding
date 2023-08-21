@@ -52,6 +52,9 @@
 //! \ingroup TLibEncoder
 //! \{
 
+extern Bool bIsMapSet_tmp;
+extern int logo_map[64][64];
+
 class TEncTop;
 class TEncSbac;
 class TEncCavlc;
@@ -125,8 +128,16 @@ public:
   /// destroy internal buffers
   Void  destroy             ();
 
+  Void  prepareRecBuffers    ( TComDataCU*& rpcBestCU, const UInt uiDepth );
+  Void  overwriteBuffer      ( TComPicYuv* src, UInt ctuRsAddr, UInt uiAbsZorderIdx, UInt uiDepth, Bool bIsTransparent);
+
   /// CTU analysis function
-  Void  compressCtu         ( TComDataCU*  pCtu );
+  Void  compressCtu         ( TComDataCU*  pCtu, int redo = 0 );
+
+  Void  resetStorage        ();
+  Void  encodeStorage       ( binStorage storage );
+  Void  encodeStorage       ();
+  Void  getStorage          ( binStorage &storage );
 
   /// CTU encoding function
   Void  encodeCtu           ( TComDataCU*  pCtu );
@@ -135,10 +146,13 @@ public:
 
   Void setFastDeltaQp       ( Bool b)                 { m_bFastDeltaQP = b;         }
 
+  Bool getIsRecording() { return this->m_pcBinCABAC->getIsRecording(); }
+  Void setIsRecording(Bool b) { this->m_pcBinCABAC->setIsRecording(b); }
+
 protected:
   Void  finishCU            ( TComDataCU*  pcCU, UInt uiAbsPartIdx );
 #if AMP_ENC_SPEEDUP
-  Void  xCompressCU         ( TComDataCU*& rpcBestCU, TComDataCU*& rpcTempCU, const UInt uiDepth DEBUG_STRING_FN_DECLARE(sDebug), PartSize eParentPartSize = NUMBER_OF_PART_SIZES );
+  Void  xCompressCU         ( TComDataCU*& rpcBestCU, TComDataCU*& rpcTempCU, const UInt uiDepth DEBUG_STRING_FN_DECLARE(sDebug), int redo, PartSize eParentPartSize = NUMBER_OF_PART_SIZES );
 #else
   Void  xCompressCU         ( TComDataCU*& rpcBestCU, TComDataCU*& rpcTempCU, const UInt uiDepth        );
 #endif
@@ -157,6 +171,7 @@ protected:
 
   Void  xCheckRDCostIntra   ( TComDataCU *&rpcBestCU,
                               TComDataCU *&rpcTempCU,
+                              Bool redo,
                               PartSize     ePartSize
                               DEBUG_STRING_FN_DECLARE(sDebug)
                             );

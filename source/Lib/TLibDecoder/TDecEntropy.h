@@ -110,6 +110,9 @@ public:
 
   virtual Void parseExplicitRdpcmMode ( TComTU &rTu, ComponentID compID ) = 0;
 
+  virtual Void setIsRecording ( Bool b ) = 0;
+  virtual Bool getIsRecording () = 0;
+
   virtual ~TDecEntropyIf() {}
 };
 
@@ -122,6 +125,7 @@ private:
 #if MCTS_ENC_CHECK
   TDecConformanceCheck* m_pConformanceCheck;
 #endif
+  Bool            m_bIsRecording;
   //UInt    m_uiBakAbsPartIdx;
   //UInt    m_uiBakChromaOffset;
   //UInt    m_bakAbsPartIdxCU;
@@ -171,6 +175,8 @@ public:
   Void decodeQP                ( TComDataCU* pcCU, UInt uiAbsPartIdx );
   Void decodeChromaQpAdjustment( TComDataCU* pcCU, UInt uiAbsPartIdx );
 
+  Void setIsRecording          ( Bool b );
+  Bool getIsRecording          ();
 private:
 
   Void xDecodeTransform        ( Bool& bCodeDQP, Bool& isChromaQpAdjCoded, TComTU &rTu, const Int quadtreeTULog2MinSizeInCU );

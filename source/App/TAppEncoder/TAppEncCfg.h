@@ -72,6 +72,7 @@ public:
 protected:
   // file I/O
   std::string m_inputFileName;                                ///< source file name
+  std::string m_inputFileNameReplaceContent;                  ///< replace content map file
   std::string m_bitstreamFileName;                            ///< output bitstream file
   std::string m_reconFileName;                                ///< output reconstruction file
 #if SHUTTER_INTERVAL_SEI_PROCESSING
@@ -236,6 +237,12 @@ protected:
   Int       m_maxNumOffsetsPerPic;                            ///< SAO maximun number of offset per picture
   Bool      m_saoCtuBoundary;                                 ///< SAO parameter estimation using non-deblocked pixels for CTU bottom and right boundary areas
   Bool      m_resetEncoderStateAfterIRAP;                     ///< When true, encoder state will be reset following an IRAP.
+
+  Int       m_TBRCtuStartX;                                   ///< TBR CTU area start X. -1: Disabled
+  Int       m_TBRCtuStartY;                                   ///< TBR CTU area start Y. -1: Disabled
+  Int       m_TBRCtuEndX;                                     ///< TBR CTU area end X. -1: Disabled
+  Int       m_TBRCtuEndY;                                     ///< TBR CTU area end Y. -1: Disabled
+
   // coding tools (loop filter)
   Bool      m_bLoopFilterDisable;                             ///< flag for using deblocking filter
   Bool      m_loopFilterOffsetInPPS;                          ///< offset for deblocking filter in 0 = slice header, 1 = PPS

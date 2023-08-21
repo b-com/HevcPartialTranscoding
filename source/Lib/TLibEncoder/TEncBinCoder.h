@@ -65,6 +65,10 @@ public:
   virtual UInt  getNumWrittenBits ()                                          = 0;
 
   virtual Void  encodeBin         ( UInt  uiBin,  ContextModel& rcCtxModel )  = 0;
+  virtual Void  resetStorage      () = 0;
+  virtual Void  encodeStorage     () = 0;
+  virtual Void  getStorage        ( binStorage &storage ) = 0;
+  virtual Void  setStorage        ( binStorage storage ) = 0;
   virtual Void  encodeBinEP       ( UInt  uiBin                            )  = 0;
   virtual Void  encodeBinsEP      ( UInt  uiBins, Int numBins              )  = 0;
   virtual Void  encodeBinTrm      ( UInt  uiBin                            )  = 0;

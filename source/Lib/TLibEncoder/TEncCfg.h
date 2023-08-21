@@ -205,6 +205,11 @@ protected:
   UInt      m_uiQuadtreeTUMaxDepthInter;
   UInt      m_uiQuadtreeTUMaxDepthIntra;
 
+  Int       m_TBRCtuStartX;
+  Int       m_TBRCtuStartY;
+  Int       m_TBRCtuEndX;
+  Int       m_TBRCtuEndY;
+
   //====== Loop/Deblock Filter ========
   Bool      m_bLoopFilterDisable;
   Bool      m_loopFilterOffsetInPPS;
@@ -653,6 +658,11 @@ public:
 
   Void setUseAMP( Bool b ) { m_useAMP = b; }
 
+  Void      setTBRCtuStartX                 ( Int   i )      { m_TBRCtuStartX = i; }
+  Void      setTBRCtuStartY                 ( Int   i )      { m_TBRCtuStartY = i; }
+  Void      setTBRCtuEndX                   ( Int   i )      { m_TBRCtuEndX = i; }
+  Void      setTBRCtuEndY                   ( Int   i )      { m_TBRCtuEndY = i; }
+
   //====== Loop/Deblock Filter ========
   Void      setLoopFilterDisable            ( Bool  b )      { m_bLoopFilterDisable        = b; }
   Void      setLoopFilterOffsetInPPS        ( Bool  b )      { m_loopFilterOffsetInPPS     = b; }
@@ -759,6 +769,11 @@ public:
   UInt      getQuadtreeTULog2MinSize        ()      const { return m_uiQuadtreeTULog2MinSize; }
   UInt      getQuadtreeTUMaxDepthInter      ()      const { return m_uiQuadtreeTUMaxDepthInter; }
   UInt      getQuadtreeTUMaxDepthIntra      ()      const { return m_uiQuadtreeTUMaxDepthIntra; }
+
+  Int       getTBRCtuStartX                 ()      { return m_TBRCtuStartX; }
+  Int       getTBRCtuStartY                 ()      { return m_TBRCtuStartY; }
+  Int       getTBRCtuEndX                   ()      { return m_TBRCtuEndX; }
+  Int       getTBRCtuEndY                   ()      { return m_TBRCtuEndY; }
 
   //==== Loop/Deblock Filter ========
   Bool      getLoopFilterDisable            ()      { return  m_bLoopFilterDisable;       }

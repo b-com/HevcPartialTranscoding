@@ -46,6 +46,7 @@
 
 TDecBinCABAC::TDecBinCABAC()
 : m_pcTComBitstream( 0 )
+, m_bIsRecording(false)
 {
 }
 
@@ -110,6 +111,12 @@ Void TDecBinCABAC::decodeBin( UInt& ruiBin, ContextModel &rcCtxModel, const TCom
 Void TDecBinCABAC::decodeBin( UInt& ruiBin, ContextModel &rcCtxModel )
 #endif
 {
+  if (!m_bIsRecording)
+  {
+    StorageEntry entry = m_storage.getCurEntry();
+    ruiBin = entry.codeValue;
+    return;
+  }
 #if DEBUG_CABAC_BINS
   const UInt startingRange = m_uiRange;
 #endif
@@ -177,6 +184,8 @@ Void TDecBinCABAC::decodeBin( UInt& ruiBin, ContextModel &rcCtxModel )
   }
   g_debugCounter++;
 #endif
+
+  m_storage.addEntryToStorage({ &rcCtxModel, ruiBin, -1, 1 });
 }
 
 
@@ -186,6 +195,13 @@ Void TDecBinCABAC::decodeBinEP( UInt& ruiBin, const TComCodingStatisticsClassTyp
 Void TDecBinCABAC::decodeBinEP( UInt& ruiBin )
 #endif
 {
+  if (!m_bIsRecording)
+  {
+    StorageEntry entry = m_storage.getCurEntry();
+    ruiBin = entry.codeValue;
+    return;
+  }
+
   if (m_uiRange == 256)
   {
 #if RExt__DECODER_DEBUG_BIT_STATISTICS
@@ -211,6 +227,7 @@ Void TDecBinCABAC::decodeBinEP( UInt& ruiBin )
     ruiBin = 1;
     m_uiValue -= scaledRange;
   }
+  m_storage.addEntryToStorage({ &ContextModel(), ruiBin, -1, 2 });
 #if RExt__DECODER_DEBUG_BIT_STATISTICS
   TComCodingStatistics::IncrementStatisticEP(whichStat, 1, Int(ruiBin));
 #endif
@@ -222,6 +239,13 @@ Void TDecBinCABAC::decodeBinsEP( UInt& ruiBin, Int numBins, const TComCodingStat
 Void TDecBinCABAC::decodeBinsEP( UInt& ruiBin, Int numBins )
 #endif
 {
+  if (!m_bIsRecording)
+  {
+    StorageEntry entry = m_storage.getCurEntry();
+    ruiBin = entry.codeValue;
+    return;
+  }
+
   if (m_uiRange == 256)
   {
 #if RExt__DECODER_DEBUG_BIT_STATISTICS
@@ -276,6 +300,7 @@ Void TDecBinCABAC::decodeBinsEP( UInt& ruiBin, Int numBins )
   }
 
   ruiBin = bins;
+  m_storage.addEntryToStorage({ &ContextModel(), ruiBin, numBins, 3 });
 #if RExt__DECODER_DEBUG_BIT_STATISTICS
   TComCodingStatistics::IncrementStatisticEP(whichStat, origNumBins, Int(ruiBin));
 #endif
@@ -295,6 +320,12 @@ Void TDecBinCABAC::decodeAlignedBinsEP( UInt& ruiBins, Int numBins, const class 
 Void TDecBinCABAC::decodeAlignedBinsEP( UInt& ruiBins, Int numBins )
 #endif
 {
+  if (!m_bIsRecording)
+  {
+    StorageEntry entry = m_storage.getCurEntry();
+    ruiBins = entry.codeValue;
+    return;
+  }
   Int binsRemaining = numBins;
   ruiBins = 0;
 
@@ -329,6 +360,7 @@ Void TDecBinCABAC::decodeAlignedBinsEP( UInt& ruiBins, Int numBins )
     }
   }
 
+  m_storage.addEntryToStorage({ &ContextModel(), ruiBins, numBins, 4 });
 #if RExt__DECODER_DEBUG_BIT_STATISTICS
   TComCodingStatistics::IncrementStatisticEP(whichStat, numBins, Int(ruiBins));
 #endif
@@ -337,6 +369,12 @@ Void TDecBinCABAC::decodeAlignedBinsEP( UInt& ruiBins, Int numBins )
 Void
 TDecBinCABAC::decodeBinTrm( UInt& ruiBin )
 {
+  if (!m_bIsRecording)
+  {
+    StorageEntry entry = m_storage.getCurEntry();
+    ruiBin = entry.codeValue;
+    return;
+  }
   m_uiRange -= 2;
   UInt scaledRange = m_uiRange << 7;
   if( m_uiValue >= scaledRange )
@@ -365,6 +403,7 @@ TDecBinCABAC::decodeBinTrm( UInt& ruiBin )
       }
     }
   }
+  m_storage.addEntryToStorage({ &ContextModel(), ruiBin, -1, 5 });
 }
 
 /** Read a PCM code.

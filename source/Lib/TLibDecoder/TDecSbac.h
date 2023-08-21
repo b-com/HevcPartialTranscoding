@@ -90,6 +90,8 @@ public:
   Void  parseSaoUflc              ( UInt uiLength, UInt& ruiVal     );
   Void parseSAOBlkParam           (SAOBlkParam& saoBlkParam, Bool* sliceEnabled, Bool leftMergeAvail, Bool aboveMergeAvail, const BitDepths &bitDepths);
   Void parseSaoSign               (UInt& val);
+  Void setIsRecording             ( Bool b );
+  Bool getIsRecording             ();
 
 private:
 #if RExt__DECODER_DEBUG_BIT_STATISTICS
@@ -106,6 +108,7 @@ private:
 private:
   TComInputBitstream* m_pcBitstream;
   TDecBinIf*        m_pcTDecBinIf;
+  //Bool                m_bIsRecording;
 
 public:
 

@@ -79,6 +79,9 @@ public:
   virtual Void  copyState         ( const TDecBinIf* pcTDecBinIf )            = 0;
   virtual TDecBinCABAC*   getTDecBinCABAC   ()             { return 0; }
   virtual const TDecBinCABAC*   getTDecBinCABAC   () const { return 0; }
+
+  virtual Void setIsRecording     ( Bool b ) = 0;
+  virtual Bool getIsRecording     () = 0;
 };
 
 //! \}

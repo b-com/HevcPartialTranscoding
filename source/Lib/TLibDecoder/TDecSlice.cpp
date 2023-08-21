@@ -211,6 +211,13 @@ Void TDecSlice::decompressSlice(TComInputBitstream** ppcSubstreams, TComPic* pcP
       }
     }
 
+    m_pcCuDecoder->setIsRecording(true);
+    m_pcCuDecoder->decodeCtu     ( pCtu, isLastCtuOfSliceSegment );
+    /* 
+    Syntax elements are all read.
+    Change them and have a new bitstream
+    */
+    m_pcCuDecoder->setIsRecording(false); 
     m_pcCuDecoder->decodeCtu     ( pCtu, isLastCtuOfSliceSegment );
 
 #if DECODER_PARTIAL_CONFORMANCE_CHECK != 0

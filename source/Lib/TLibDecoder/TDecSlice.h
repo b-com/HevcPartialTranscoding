@@ -79,6 +79,9 @@ public:
   Void  destroy           ();
 
   Void  decompressSlice   ( TComInputBitstream** ppcSubstreams,   TComPic* pcPic, TDecSbac* pcSbacDecoder );
+
+  Bool getIsRecording     ();
+  Void setIsRecording     ( Bool b );
 };
 
 //! \}

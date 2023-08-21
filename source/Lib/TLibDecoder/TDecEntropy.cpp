@@ -617,6 +617,19 @@ Void TDecEntropy::xDecodeTransform        ( Bool& bCodeDQP, Bool& isChromaQpAdjC
   }
 }
 
+Void TDecEntropy::setIsRecording(Bool b)
+{
+  m_pcEntropyDecoderIf->setIsRecording(b);
+  //m_bIsRecording = b;
+  return;
+}
+
+Bool TDecEntropy::getIsRecording()
+{
+  return m_pcEntropyDecoderIf->getIsRecording();
+  //return m_bIsRecording;
+}
+
 Void TDecEntropy::decodeQP          ( TComDataCU* pcCU, UInt uiAbsPartIdx )
 {
   if ( pcCU->getSlice()->getPPS()->getUseDQP() )
